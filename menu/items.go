@@ -42,8 +42,8 @@ func SelectString(items []string, action func(string) error) MenuItems {
 	for _, item := range items {
 		menuItems = menuItems.Append(&MenuItem{
 			Label: item,
-			Action: func(item string) func() error {
-				return func() error { return action(item) }
+			Action: func(item string) func(*Ctx) {
+				return func(*Ctx) { action(item) }
 			}(item),
 		})
 	}

@@ -10,14 +10,13 @@ import (
 )
 
 type Menu struct {
-	Title               string
-	Promt               string
-	History             []string
-	Items               MenuItems
-	Meta                map[string]interface{}
-	CustomOptionHandler func(string) error
-	QueryHandler        func(Ctx)
-	once                sync.Once
+	Title        string
+	Promt        string
+	History      []string
+	Items        MenuItems
+	Meta         map[string]interface{}
+	QueryHandler func(*Ctx)
+	once         sync.Once
 }
 
 func (menu *Menu) init() {
@@ -30,6 +29,9 @@ func (menu *Menu) init() {
 		}
 		if menu.Promt == "" {
 			menu.Promt = "Choose wisely: "
+		}
+		if menu.Meta == nil {
+			menu.Meta = map[string]interface{}{}
 		}
 		menu.Items = menu.Items.NotNil()
 	})
@@ -72,29 +74,40 @@ func (menu *Menu) Run() (*MenuItem, error) {
 			return nil, err
 		}
 		input = strings.TrimSpace(input)
+		if menu.History != nil {
+			menu.History = append(menu.History, input)
+		}
+		var itemIndex int
 		if ind, ok := optionSet[input]; ok {
-			item := menu.Items[ind]
-			if item.Action == nil {
-				return item, nil
-			}
-			var ctx = menu.Context()
-			item.Action(ctx)
-			return item, ctx.err
+			itemIndex = ind
 		}
-		ind := 0
-		if _, err = fmt.Sscan(input, &ind); err == nil && (ind > 0 && ind <= len(menu.Items)) {
-			item := menu.Items[ind-1] // -1 is very important, do not change!
-			if item.Action == nil {
-				return item, nil
-			}
-			var ctx = menu.Context()
-			item.Action(ctx)
-			return item, ctx.err
+		if _, err = fmt.Sscan(input, &itemIndex); err == nil {
+			itemIndex-- // decrement is very important, do not change!
 		}
-		if menu.CustomOptionHandler == nil {
+		if itemIndex >= 0 && itemIndex < len(menu.Items) {
+			item, ctx := menu.RunItem(itemIndex)
+			if ctx.err != nil || ctx.stop {
+				return item, ctx.err
+			}
+			continue
+		}
+		if menu.QueryHandler == nil {
 			fmt.Printf("Option %q not found\n", input)
 		} else {
-			return nil, menu.CustomOptionHandler(input)
+			var ctx = menu.Context().WithQuery(input)
+			menu.QueryHandler(&ctx)
+			if ctx.err != nil || ctx.stop {
+				return nil, ctx.err
+			}
 		}
 	}
+}
+
+func (menu *Menu) RunItem(i int) (*MenuItem, Ctx) {
+	var item = menu.Items[i]
+	var ctx = menu.Context()
+	if item.Action != nil {
+		item.Action(&ctx)
+	}
+	return item, ctx
 }
